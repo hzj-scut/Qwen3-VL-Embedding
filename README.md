@@ -67,6 +67,13 @@ Building on the success of our text-oriented [Qwen3-Embedding](https://huggingfa
 | **Qwen3-VL-Reranker-2B** | 2B | 28 | 32K | - | - | - | ✅ |
 | **Qwen3-VL-Reranker-8B** | 8B | 36 | 32K | - | - | - | ✅ |
 
+### LoRA Configs
+
+| Model | rank | alpha | target_modules |
+|------|------|-------|----------------|
+| Qwen3-VL-Embedding | 32 | 32 | q_proj v_proj k_proj up_proj down_proj gate_proj |
+| Qwen3-VL-Reranker  | 32 | 32 | q_proj v_proj k_proj up_proj down_proj gate_proj |
+
 ### Architecture Design
 
 **Qwen3-VL-Embedding: Dual-Tower Architecture**
@@ -360,7 +367,7 @@ Qwen3VLEmbedder(
 
 ### Embedding Model
 
-We provide comprehensive examples in `examples/embedding.ipynb` demonstrating various tasks across different modalities:
+We provide comprehensive examples [here](examples/embedding.ipynb) demonstrating various tasks across different modalities:
 
 **Text Tasks:**
 - Text Classification (AG News)
@@ -374,7 +381,7 @@ We provide comprehensive examples in `examples/embedding.ipynb` demonstrating va
 
 Examples for video and visual document tasks are presented in the appendix of [technical report](assets/qwen3vlembedding_technical_report.pdf)
 
-We also provide an end-to-end multimodal RAG example using Qwen3-VL-Embedding, Qwen3-VL-Reranker and Qwen3-VL [here](https://github.com/QwenLM/Qwen3-VL-Embedding/blob/main/examples/Qwen3VL_Multimodal_RAG.ipynb).
+We also provide an end-to-end multimodal RAG example using Qwen3-VL-Embedding, Qwen3-VL-Reranker and Qwen3-VL [here](examples/Qwen3VL_Multimodal_RAG.ipynb).
 
 ### Reranking Model
 
