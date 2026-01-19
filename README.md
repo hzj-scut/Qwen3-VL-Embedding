@@ -186,49 +186,9 @@ print(embeddings @ embeddings.T)
 
 ##### vLLM usage
 
-```python
-# Requires vllm>=0.14.0
-from io import BytesIO
+> **Note**: Requires vLLM >= 0.14.0
 
-import requests
-import torch
-from PIL import Image
-
-from vllm import LLM
-
-
-def get_image_from_url(url) -> Image.Image:
-    response = requests.get(url)
-    img = Image.open(BytesIO(response.content)).convert("RGB")
-    return img
-
-
-model = LLM(model="Qwen/Qwen3-VL-Embedding-2B", runner="pooling")
-
-image = get_image_from_url("https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg")
-image_placeholder = "<|vision_start|><|image_pad|><|vision_end|>"
-inputs = [
-    {
-        "prompt": "A woman playing with her dog on a beach at sunset.",
-    },
-    {
-        "prompt": "A woman shares a joyful moment with her golden retriever on a sun-drenched beach at sunset, as the dog offers its paw in a heartwarming display of companionship and trust."
-    },
-    {
-        "prompt": image_placeholder,
-        "multi_modal_data": {"image": image},
-    },
-    {
-        "prompt": f"{image_placeholder}\nA woman shares a joyful moment with her golden retriever on a sun-drenched beach at sunset, as the dog offers its paw in a heartwarming display of companionship and trust.",
-        "multi_modal_data": {"image": image},
-    },
-]
-
-outputs = model.embed(inputs)
-embeddings = torch.tensor([o.outputs.embedding for o in outputs])
-scores = embeddings[:2] @ embeddings[2:].T
-print(scores.tolist())
-```
+For vLLM usage examples with the embedding model, please refer to [examples/embedding_vllm.ipynb](examples/embedding_vllm.ipynb).
 
 #### Reranking Model
 
@@ -264,60 +224,27 @@ print(scores)
 
 ##### vLLM usage
 
-```python
-# Requires vllm>=0.14.0
-from vllm import LLM
+> **Note**: Requires vLLM >= 0.14.0
 
-model = LLM(
-    model="Qwen/Qwen3-VL-Reranker-2B",
-    runner="pooling",
-    hf_overrides={
-        "architectures": ["Qwen3VLForSequenceClassification"],
-        "classifier_from_token": ["no", "yes"],
-        "is_original_qwen3_reranker": True,
-    },
-)
-
-query = "A woman playing with her dog on a beach at sunset."
-# Sample multimodal documents to be scored against the query
-# Each document contains an image URL that will be fetched and processed
-documents = {
-    "content": [
-        {
-            "type": "text",
-            "text": "A woman shares a joyful moment with her golden retriever on a sun-drenched beach at sunset, as the dog offers its paw in a heartwarming display of companionship and trust."
-        },
-        {
-            "type": "image_url",
-            "image_url": {
-                "url": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg"
-            },
-        },
-        {
-            "type": "video_url",
-            "video_url": {
-                "url": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-Omni/demo/draw.mp4"
-            },
-        },
-    ]
-}
-outputs = model.score(query, documents)
-print("Relevance scores:", [output.outputs.score for output in outputs])
-```
+For vLLM usage examples with the reranker model, please refer to [examples/reranker_vllm.ipynb](examples/reranker_vllm.ipynb).
 
 ### Model Input Specification
 
 #### Multimodal Object
 A dictionary that can contain the following keys:
-- **text**: Text input as a string
+- **text**: Text input as a string or a list of strings
 - **image**: Image input, supports:
   - Local file path
   - URL (network path)
   - `PIL.Image.Image` instance
+  - List of any combination of the above (multiple images)
 - **video**: Video input, supports:
   - Local file path
   - URL (network path)
-  - Sequence of video frames
+  - Sequence of video frames (list of image paths or `PIL.Image.Image` instances)
+  - List of any combination of the above (multiple videos)
+
+**Note**: All input types (text, image, video) now support both single objects and lists of objects, allowing you to provide multiple inputs of the same type in a single request. For example, you can pass multiple images as a list, multiple text strings as a list, or multiple videos as a list.
 
 #### Instruction
 Task description for relevance evaluation (default: "Represent the user's input")
@@ -354,7 +281,6 @@ Qwen3VLEmbedder(
     total_pixels=7864320,      # Maximum total pixels for input videos (multiplied by 2 in model)
                               # For a 16-frame video, each frame can have up to 983040 pixels (1280×768 resolution)
     fps=1.0,                   # Default sampling frame rate for video files (frames per second)
-    num_frames=64,             # Default number of frames when video input is a frame sequence
     max_frames=64,             # Maximum number of frames for video input
     torch_dtype=torch.bfloat16,
     attn_implementation="flash_attention_2"
@@ -385,7 +311,13 @@ We also provide an end-to-end multimodal RAG example using Qwen3-VL-Embedding, Q
 
 ### Reranking Model
 
-Coming soon.
+We provide comprehensive examples [here](examples/reranker.ipynb) demonstrating various tasks across different modalities:
+
+**Text Tasks:**
+- Text Retrieval (MS MARCO)
+
+**Image Tasks:**
+- Image Retrieval (MS COCO)
 
 ---
 
@@ -405,32 +337,32 @@ Results on the MMEB-V2 benchmark. All models except IFM-TTE have been re-evaluat
 | GME-2B                     | 2B      | 54.4 | 29.9 | 66.9 | 55.5 | 51.9 | 34.9 | 42.0 | 25.6 | 31.1 | 33.6 | 86.1 | 54.0 | 82.5 | 67.5 | 76.8 | 55.3 |
 | GME-7B                     | 7B      | 57.7 | 34.7 | 71.2 | 59.3 | 56.0 | 37.4 | 50.4 | 28.4 | 37.0 | 38.4 | 89.4 | 55.6 | 85.0 | 68.3 | 79.3 | 59.1 |
 | Ops-MM-embedding-v1        | 8B      | 69.7 | 69.6 | 73.1 | 87.2 | 72.7 | 59.7 | 62.2 | 45.7 | 43.2 | 53.8 | 80.1 | 59.6 | 79.3 | 67.8 | 74.4 | 68.9 |
-| IFM-TTE                    | 8B      | 76.7 | 78.5 | 74.6 | 89.3 | 77.9 | 60.5 | 67.9 | 51.7 | 54.9 | 59.2 | 85.2 | 71.5 | 92.7 | 53.3 | 79.5 | 74.1 |
+| IFM-TTE                    | 8B      | **76.7** | 78.5 | 74.6 | 89.3 | 77.9 | 60.5 | 67.9 | 51.7 | 54.9 | 59.2 | 85.2 | 71.5 | **92.7** | 53.3 | 79.5 | 74.1 |
 | RzenEmbed                  | 8B      | 70.6 | 71.7 | 78.5 | 92.1 | 75.9 | 58.8 | 63.5 | 51.0 | 45.5 | 55.7 | 89.7 | 60.7 | 88.7 | 69.9 | 81.3 | 72.9 |
-| Seed-1.6-embedding-1215    | unknown | 75.0 | 74.9 | 79.3 | 89.0 | 78.0 | 85.2 | 66.7 | 59.1 | 54.8 | 67.7 | 90.0 | 60.3 | 90.0 | 70.7 | 82.2 | 76.9 | 
+| Seed-1.6-embedding-1215    | unknown | 75.0 | 74.9 | 79.3 | 89.0 | 78.0 | **85.2** | 66.7 | **59.1** | 54.8 | **67.7** | **90.0** | 60.3 | 90.0 | 70.7 | 82.2 | 76.9 | 
 | **Qwen3-VL-Embedding-2B**  | 2B      | 70.3 | 74.3 | 74.8 | 88.5 | 75.0 | 71.9 | 64.9 | 53.9 | 53.3 | 61.9 | 84.4 | 65.3 | 86.4 | 69.4 | 79.2 | 73.2 |
-| **Qwen3-VL-Embedding-8B**  | 8B      | 74.2 | 81.1 | 80.0 | 92.2 | 80.1 | 78.4 | 71.0 | 58.7 | 56.1 | 67.1 | 87.2 | 69.9 | 88.7 | 73.3 | 82.4 | **77.8** |
+| **Qwen3-VL-Embedding-8B**  | 8B      | 74.2 | **81.1** | **80.0** | **92.2** | **80.1** | 78.4 | **71.0** | 58.7 | **56.1** | 67.1 | 87.2 | **69.9** | 88.7 | **73.3** | **82.4** | **77.8** |
 
 #### Evaluation Results on [MMTEB](https://huggingface.co/spaces/mteb/leaderboard)
 
 Results on the MMTEB benchmark. 
 
 | Model                            |  Size   |  Mean (Task)  | Mean (Type) | Bitxt Mining | Class. | Clust. | Inst. Retri. | Multi. Class. | Pair. Class. | Rerank | Retri. | STS  |
-|----------------------------------|:-------:|:-------------:|:-------------:|:--------------:|:--------:|:--------:|:--------------:|:---------------:|:--------------:|:--------:|:--------:|:------:|
-| NV-Embed-v2                      |   7B    |     56.29     | 49.58       | 57.84        | 57.29  | 40.80  | 1.04         | 18.63         | 78.94        | 63.82  | 56.72  | 71.10|
-| GritLM-7B                        |   7B    |     60.92     | 53.74       | 70.53        | 61.83  | 49.75  | 3.45         | 22.77         | 79.94        | 63.78  | 58.31  | 73.33|
-| BGE-M3                           |  0.6B   |     59.56     | 52.18       | 79.11        | 60.35  | 40.88  | -3.11        | 20.1          | 80.76        | 62.79  | 54.60  | 74.12|
-| multilingual-e5-large-instruct   |  0.6B   |     63.22     | 55.08       | 80.13        | 64.94  | 50.75  | -0.40        | 22.91         | 80.86        | 62.61  | 57.12  | 76.81|
-| gte-Qwen2-1.5B-instruct          |  1.5B   |     59.45     | 52.69       | 62.51        | 58.32  | 52.05  | 0.74         | 24.02         | 81.58        | 62.58  | 60.78  | 71.61|
-| gte-Qwen2-7b-Instruct            |   7B    |     62.51     | 55.93       | 73.92        | 61.55  | 52.77  | 4.94         | 25.48         | 85.13        | 65.55  | 60.08  | 73.98|
-| text-embedding-3-large           |    -    |     58.93     | 51.41       | 62.17        | 60.27  | 46.89  | -2.68        | 22.03         | 79.17        | 63.89  | 59.27  | 71.68|
-| Cohere-embed-multilingual-v3.0   |    -    |     61.12     | 53.23       | 70.50        | 62.95  | 46.89  | -1.89        | 22.74         | 79.88        | 64.07  | 59.16  | 74.80|
-| Gemini Embedding                 |    -    |     68.37     | 59.59       | 79.28        | 71.82  | 54.59  | 5.18         | **29.16**     | 83.63        | 65.58  | 67.71  | 79.40|
-| Qwen3-Embedding-0.6B        |  0.6B   |     64.33     | 56.00       | 72.22        | 66.83  | 52.33  | 5.09         | 24.59         | 80.83        | 61.41  | 64.64  | 76.17|
-| Qwen3-Embedding-4B           |   4B    |     69.45     | 60.86       | 79.36        | 72.33  | 57.15  | **11.56**    | 26.77         | 85.05        | 65.08  | 69.60  | 80.86|
-| Qwen3-Embedding-8B          |   8B    |   **70.58**   | **61.69**   | **80.89**    | **74.00** | **57.65** | 10.06      | 28.66         | **86.40**    | **65.63** | **70.88** | **81.08** |
-| Qwen3-VL-Embedding-2B | 2B | 63.87 | 55.84 | 69.51 | 65.86 | 52.50 | 3.87 | 26.08 | 78.50 | 64.80 | 67.12 | 74.29 |
-| Qwen3-VL-Embedding-8B | 8B | 67.88 | 58.88 | 77.48 | 71.95 | 55.82 | 4.46 | 28.59 | 81.08 | 65.72 | 69.41 | 75.41 |
+|----------------------------------|:-------:|:-------------:|:-------------:|:------------:|:------:|:------:|:------------:|:-------------:|:------------:|:------:|:------:|:----:|
+| NV-Embed-v2                      |   7B    |     56.3      |     49.6      |     57.8     |  57.3  |  40.8  |     1.0      |     18.6      |     78.9     |  63.8  |  56.7  | 71.1 |
+| GritLM-7B                        |   7B    |     60.9      |     53.7      |     70.5     |  61.8  |  49.8  |     3.5      |     22.8      |     79.9     |  63.8  |  58.3  | 73.3 |
+| BGE-M3                           |  0.6B   |     59.6      |     52.2      |     79.1     |  60.4  |  40.9  |    -3.1      |     20.1      |     80.8     |  62.8  |  54.6  | 74.1 |
+| multilingual-e5-large-instruct   |  0.6B   |     63.2      |     55.1      |     80.1     |  64.9  |  50.8  |    -0.4      |     22.9      |     80.9     |  62.6  |  57.1  | 76.8 |
+| gte-Qwen2-1.5B-instruct          |  1.5B   |     59.5      |     52.7      |     62.5     |  58.3  |  52.1  |     0.7      |     24.0      |     81.6     |  62.6  |  60.8  | 71.6 |
+| gte-Qwen2-7b-Instruct            |   7B    |     62.5      |     55.9      |     73.9     |  61.6  |  52.8  |     4.9      |     25.5      |     85.1     |  65.6  |  60.1  | 74.0 |
+| text-embedding-3-large           |    -    |     58.9      |     51.4      |     62.2     |  60.3  |  46.9  |    -2.7      |     22.0      |     79.2     |  63.9  |  59.3  | 71.7 |
+| Cohere-embed-multilingual-v3.0   |    -    |     61.1      |     53.2      |     70.5     |  63.0  |  46.9  |    -1.9      |     22.7      |     79.9     |  64.1  |  59.2  | 74.8 |
+| Gemini Embedding                 |    -    |     68.4      |     59.6      |     79.3     |  71.8  |  54.6  |     5.2      |   **29.2**    |     83.6     |  65.6  |  67.7  | 79.4 |
+| Qwen3-Embedding-0.6B             |  0.6B   |     64.3      |     56.0      |     72.2     |  66.8  |  52.3  |     5.1      |     24.6      |     80.8     |  61.4  |  64.6  | 76.2 |
+| Qwen3-Embedding-4B               |   4B    |     69.5      |     60.9      |     79.4     |  72.3  |  57.2  |   **11.6**   |     26.8      |     85.1     |  65.1  |  69.6  | 80.9 |
+| Qwen3-Embedding-8B               |   8B    |   **70.6**    |   **61.7**    |   **80.9**   |**74.0**|**57.7**|     10.1     |     28.7      |   **86.4**   |**65.6**|**70.9**|**81.1**|
+| Qwen3-VL-Embedding-2B            |   2B    |     63.9      |     55.8      |     69.5     |  65.9  |  52.5  |     3.9      |     26.1      |     78.5     |  64.8  |  67.1  | 74.3 |
+| Qwen3-VL-Embedding-8B            |   8B    |     67.9      |     58.9      |     77.5     |  72.0  |  55.8  |     4.5      |     28.6      |     81.1     |  65.7  |  69.4  | 75.4 |
 
 ### Reranking Model
 
@@ -439,9 +371,9 @@ We utilize retrieval task datasets from various subtasks of [MMEB-v2](https://hu
 | Model | Size | MMEB-v2(Retrieval) - Avg | MMEB-v2(Retrieval) - Image | MMEB-v2(Retrieval) - Video | MMEB-v2(Retrieval) - VisDoc | MMTEB(Retrieval) | JinaVDR | ViDoRe(v3) |
 |-------|------|--------------------------|----------------------------|----------------------------|------------------------------|------------------|---------|------------|
 | Qwen3-VL-Embedding-2B | 2B | 73.4 | 74.8 | 53.6 | 79.2 | 68.1 | 71.0 | 52.9 |
-| jina-reranker-m0      | 2B |  - | 68.2 | -    | 85.2 | -    | 82.2 | 57.8 |
-| Qwen3-VL-Reranker-2B | 2B | 75.1 | 73.8 | 52.1 | 83.4 | 70.0 | 80.9 | 60.8 |
-| Qwen3-VL-Reranker-8B | 8B | 79.2 | 80.7 | 55.8 | 86.3 | 74.9 | 83.6 | 66.7 |
+| jina-reranker-m0      | 2B |  - | 68.2 | -    | **85.2** | -    | 82.2 | 57.8 |
+| Qwen3-VL-Reranker-2B | 2B | 75.2 | 74.0 | 53.2 | 83.2 | 70.0 | 80.9 | 60.8 |
+| Qwen3-VL-Reranker-8B | 8B | **79.2** | **78.2** | **61.0** | 85.8 | **74.9** | **83.6** | **66.7** |
 
 ### Reproducing Evaluation
 
@@ -462,7 +394,18 @@ We provide reproducible evaluation code for **MMEB v2** benchmark, based on [VLM
 
 #### Reranking Model
 
-Coming soon.
+We provide reproducible evaluation code for **MMEB v2** retrieval split. To reproduce the results:
+
+1. **Download evaluation data:**
+   ```bash
+   bash data/evaluation/mmeb_v2/download_data.sh
+   ```
+
+2. **Run evaluation:**
+   ```bash
+   bash scripts/evaluation/mmeb_v2/eval_reranker.sh
+   ```
+   Run the script without arguments to see the required parameters. The script will evaluate tasks and collect results automatically.
 
 ---
 

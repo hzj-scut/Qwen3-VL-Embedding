@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn.functional as F
 import unicodedata
@@ -5,6 +6,7 @@ import numpy as np
 import logging
 
 from PIL import Image
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from typing import Optional, List, Union, Dict, Any
 from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLPreTrainedModel, Qwen3VLModel, Qwen3VLConfig
@@ -114,23 +116,45 @@ class Qwen3VLForEmbedding(Qwen3VLPreTrainedModel):
             attention_mask=attention_mask,
         )
 
-def sample_frames(frames: List[Union[str, Image.Image]], num_segments: int, max_segments: int) -> List[str]:
+def sample_frames(frames: List[Union[str, Image.Image]], max_segments: int) -> List[Union[str, Image.Image]]:
     duration = len(frames)
-    frame_id_array = np.linspace(0, duration - 1, num_segments, dtype=int)
-    frame_id_list = frame_id_array.tolist()
-    last_frame_id = frame_id_list[-1]
+    if duration <= max_segments:
+        return frames
 
-    # Create a list of sampled frames
-    sampled_frames = []
-    for frame_idx in frame_id_list:
-        try:
-            sampled_frames.append(frames[frame_idx])
-        except:
-            break
-    # Ensure the sampled list meets the required segment count
-    while len(sampled_frames) < num_segments:
-        sampled_frames.append(frames[last_frame_id])
-    return sampled_frames[:max_segments]
+    frame_id_array = np.linspace(0, duration - 1, max_segments, dtype=int)
+    frame_id_list = frame_id_array.tolist()
+    sampled_frames = [ frames[frame_idx] for frame_idx in frame_id_list ]
+    return sampled_frames
+
+def is_image_path(path: str) -> bool:
+    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg'}
+    
+    if path.startswith(('http://', 'https://')):
+        # Parse URL to remove query parameters
+        parsed_url = urlparse(path)
+        clean_path = parsed_url.path
+    else:
+        clean_path = path
+    
+    # Check file extension
+    _, ext = os.path.splitext(clean_path.lower())
+    return ext in image_extensions
+
+def is_video_input(video) -> bool:
+    if isinstance(video, str):
+        return True
+    
+    if isinstance(video, list) and len(video) > 0:
+        # Check first element to determine the type
+        first_elem = video[0]
+        
+        if isinstance(first_elem, Image.Image):
+            return True
+        
+        if isinstance(first_elem, str):
+            return is_image_path(first_elem)
+    
+    return False
 
 # Define embedder class for processing inputs and generating embeddings
 class Qwen3VLEmbedder():
@@ -142,7 +166,6 @@ class Qwen3VLEmbedder():
         max_pixels: int = MAX_PIXELS,
         total_pixels: int = MAX_TOTAL_PIXELS,
         fps: float = FPS,
-        num_frames: int = MAX_FRAMES,
         max_frames: int = MAX_FRAMES,
         default_instruction: str = "Represent the user's input.",
         **kwargs
@@ -154,7 +177,6 @@ class Qwen3VLEmbedder():
         self.max_pixels = max_pixels
         self.total_pixels = total_pixels
         self.fps = fps
-        self.num_frames = num_frames
         self.max_frames = max_frames
 
         self.default_instruction = default_instruction
@@ -195,11 +217,11 @@ class Qwen3VLEmbedder():
                 non_special_kept_count += 1
         return final_token_ids
 
-    # Format input based on provided text, image, video, and instruction
     def format_model_input(
-        self, text: Optional[str] = None,
-        image: Optional[Union[str, Image.Image]] = None,
-        video: Optional[Union[str, List[Union[str, Image.Image]]]] = None,
+        self, 
+        text: Optional[Union[List[str], str]] = None,
+        image: Optional[Union[List[Union[str, Image.Image]], str, Image.Image]] = None,
+        video: Optional[Union[List[Union[str, List[Union[str, Image.Image]]]], str, List[Union[str, Image.Image]]]] = None,
         instruction: Optional[str] = None,
         fps: Optional[float] = None,
         max_frames: Optional[int] = None
@@ -218,54 +240,88 @@ class Qwen3VLEmbedder():
             {"role": "user", "content": content}
         ]
 
+        # Normalize text input to list
+        if text is None:
+            texts = []
+        elif isinstance(text, str):
+            texts = [text]
+        else:
+            texts = text
+        
+        # Normalize image input to list
+        if image is None:
+            images = []
+        elif not isinstance(image, list):
+            images = [image]
+        else:
+            images = image
+        
+        # Normalize video input to list
+        if video is None:
+            videos = []
+        elif is_video_input(video):
+            videos = [video]
+        else:
+            # Assume it's a list of videos
+            videos = video
+
         # Add text, image, or video content to conversation
-        if not text and not image and not video:
+        if not texts and not images and not videos:
             content.append({'type': 'text', 'text': "NULL"})
             return conversation
 
-        if video:
+        # Process each video
+        for vid in videos:
             video_content = None
-            video_kwargs = { 'total_pixels': self.total_pixels }
-            if isinstance(video, list):
-                video_content = video
-                if self.num_frames is not None or self.max_frames is not None:
-                    video_content = sample_frames(video_content, self.num_frames, self.max_frames)
+            video_kwargs = {'total_pixels': self.total_pixels}
+            
+            if isinstance(vid, list):
+                # Video as frame sequence
+                video_content = vid
+                if self.max_frames is not None:
+                    video_content = sample_frames(video_content, self.max_frames)
                 video_content = [
                     ('file://' + ele if isinstance(ele, str) else ele) 
                     for ele in video_content
                 ]
-            elif isinstance(video, str):
-                video_content = video if video.startswith(('http://', 'https://')) else 'file://' + video
-                video_kwargs = {'fps': fps or self.fps, 'max_frames': max_frames or self.max_frames,}
+            elif isinstance(vid, str):
+                # Video as file path
+                video_content = vid if vid.startswith(('http://', 'https://')) else 'file://' + vid
+                video_kwargs = {'fps': fps or self.fps, 'max_frames': max_frames or self.max_frames}
             else:
-                raise TypeError(f"Unrecognized video type: {type(video)}")
+                raise TypeError(f"Unrecognized video type: {type(vid)}")
 
-            # Add video input details to content
+            # Add video input to content
             if video_content:
                 content.append({
-                    'type': 'video', 'video': video_content,
+                    'type': 'video', 
+                    'video': video_content,
                     **video_kwargs
                 })
 
-        if image:
+        # Process each image
+        for img in images:
             image_content = None
-            if isinstance(image, Image.Image):
-                image_content = image
-            elif isinstance(image, str):
-                image_content = image if image.startswith(('http', 'oss')) else 'file://' + image
+            
+            if isinstance(img, Image.Image):
+                image_content = img
+            elif isinstance(img, str):
+                image_content = img if img.startswith(('http://', 'https://')) else 'file://' + img
             else:
-                raise TypeError(f"Unrecognized image type: {type(image)}")
+                raise TypeError(f"Unrecognized image type: {type(img)}")
 
-            # Add image input details to content
+            # Add image input to content
             if image_content:
                 content.append({
-                    'type': 'image', 'image': image_content,
+                    'type': 'image', 
+                    'image': image_content,
                     "min_pixels": self.min_pixels,
                     "max_pixels": self.max_pixels
                 })
 
-        if text:
-            content.append({'type': 'text', 'text': text})
+        # Process each text
+        for txt in texts:
+            content.append({'type': 'text', 'text': txt})
 
         return conversation
 

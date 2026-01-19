@@ -106,9 +106,10 @@ def load_videomme_dataset(model_args, data_args, *args, **kwargs):
         lambda x: data_prepare(x, **kwargs), 
         batched=True,
         batch_size=256, 
-        num_proc=4,
+        num_proc=1,
         drop_last_batch=False, 
-        load_from_cache_file=False
+        load_from_cache_file=False,
+        keep_in_memory=True,
     )
     
     dataset = dataset.select_columns(["query_input", "cand_input", "dataset_infos"])

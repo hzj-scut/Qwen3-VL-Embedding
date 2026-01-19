@@ -113,9 +113,10 @@ def load_vidore_dataset(model_args, data_args, **kwargs):
         lambda x: corpus_prepare(x, **kwargs), 
         batched=True,
         batch_size=2048, 
-        num_proc=8,
+        num_proc=1,
         drop_last_batch=False, 
-        load_from_cache_file=False
+        load_from_cache_file=False,
+        keep_in_memory=True,
     )
     corpus = corpus.select_columns(['cand_input', 'dataset_infos'])
     
@@ -124,9 +125,10 @@ def load_vidore_dataset(model_args, data_args, **kwargs):
         lambda x: data_prepare(x, **kwargs), 
         batched=True,
         batch_size=2048, 
-        num_proc=8,
+        num_proc=1,
         drop_last_batch=False, 
-        load_from_cache_file=False
+        load_from_cache_file=False,
+        keep_in_memory=True,
     )
     dataset = dataset.select_columns(["query_input", "cand_input", "dataset_infos"])
 

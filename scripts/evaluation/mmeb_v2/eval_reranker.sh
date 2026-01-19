@@ -43,9 +43,9 @@ echo ""
 # Model Configuration
 # ==============================================================================
 if [ -z "$1" ]; then
-    echo "Error: Model path is required"
-    echo "Usage: $0 <model_path>"
-    echo "Example: $0 Qwen/Qwen3-VL-Embedding-2B"
+    echo "Error: Model path and encode output path are required"
+    echo "Usage: $0 <model_path> <encode_output_path>"
+    echo "Example: $0 Qwen/Qwen3-VL-Reranker-2B results/evaluation/mmeb_v2/Qwen3-VL-Embedding-2B"
     echo ""
     echo "Environment variables for multi-node setup:"
     echo "  MASTER_ADDR - Address of the master node (default: localhost)"
@@ -55,16 +55,18 @@ if [ -z "$1" ]; then
     echo ""
     echo "Example multi-node usage:"
     echo "  # On master node (rank 0):"
-    echo "  MASTER_ADDR=192.168.1.100 MASTER_PORT=2277 RANK=0 WORLD_SIZE=2 $0 Qwen/Qwen3-VL-Embedding-2B"
+    echo "  MASTER_ADDR=192.168.1.100 MASTER_PORT=2277 RANK=0 WORLD_SIZE=2 $0 Qwen/Qwen3-VL-Reranker-2B results/evaluation/mmeb_v2/Qwen3-VL-Embedding-2B"
     echo ""
     echo "  # On worker node (rank 1):"
-    echo "  MASTER_ADDR=192.168.1.100 MASTER_PORT=2277 RANK=1 WORLD_SIZE=2 $0 Qwen/Qwen3-VL-Embedding-2B"
+    echo "  MASTER_ADDR=192.168.1.100 MASTER_PORT=2277 RANK=1 WORLD_SIZE=2 $0 Qwen/Qwen3-VL-Reranker-2B results/evaluation/mmeb_v2/Qwen3-VL-Embedding-2B"
     exit 1
 fi
 
 MODEL_NAME="$1"
+ENCODE_OUTPUT_PATH="$2"
 MODEL_BASENAME=$(basename "$MODEL_NAME")
 
+TOPK=100
 BATCH_SIZE=16
 MODALITIES=("image" "video" "visdoc")
 # MODALITIES=("tmp")
@@ -75,6 +77,7 @@ BASE_OUTPUT_PATH="$OUTPUT_BASEDIR/$MODEL_BASENAME"
 
 echo "================================================="
 echo "🚀 Processing Model: $MODEL_NAME"
+echo "🚀 Encode Output Path: $ENCODE_OUTPUT_PATH"
 echo "   Output Base: $BASE_OUTPUT_PATH"
 echo "================================================="
 echo ""
@@ -83,7 +86,8 @@ echo ""
 # Main Execution Loop
 # ==============================================================================
 for MODALITY in "${MODALITIES[@]}"; do
-    DATA_CONFIG_PATH="scripts/evaluation/mmeb_v2/$MODALITY.yaml"
+    DATA_CONFIG_PATH="scripts/evaluation/mmeb_v2/${MODALITY}_retrieval.yaml"
+    MODALITY_ENCODE_OUTPUT_PATH="$ENCODE_OUTPUT_PATH/$MODALITY/"
     OUTPUT_PATH="$BASE_OUTPUT_PATH/$MODALITY/"
 
     echo "-------------------------------------------------"
@@ -105,13 +109,14 @@ for MODALITY in "${MODALITIES[@]}"; do
         --master_addr=$MASTER_ADDR \
         --master_port=$MASTER_PORT \
         --max_restarts=0 \
-        -m src.evaluation.mmeb_v2.eval_embedding \
-        --normalize true \
+        -m src.evaluation.mmeb_v2.eval_reranker \
         --per_device_eval_batch_size $BATCH_SIZE \
         --model_name_or_path \"$MODEL_NAME\" \
         --dataset_config \"$DATA_CONFIG_PATH\" \
-        --encode_output_path \"$OUTPUT_PATH\" \
-        --data_basedir \"$DATA_BASEDIR\""
+        --encode_output_path \"$MODALITY_ENCODE_OUTPUT_PATH\" \
+        --rerank_output_path \"$OUTPUT_PATH\" \
+        --data_basedir \"$DATA_BASEDIR\" \
+        --topk $TOPK"
 
     echo "  - Executing command on node $RANK..."
     eval "$cmd"

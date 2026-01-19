@@ -16,10 +16,6 @@ class ModelArguments:
         default="Represent the user's input.", 
         metadata={"help": "default instruction for the model"}
     )
-    device: str = field(
-        default="cuda", 
-        metadata={"help": "use cuda for single GPU inference, if multiple GPUs are available it will use DP automatically"}
-    )
 
 @dataclass
 class DataArguments:
@@ -35,7 +31,26 @@ class DataArguments:
         default=None, 
         metadata={"help": "encode output path"}
     )
+    # (optional)
+    rerank_output_path: str = field(
+        default=None,
+        metadata={"help": "Where to save rerank results. Default: `data_args.encode_output_path`/rerank_output"}
+    )
 
 @dataclass
 class EvalArguments(TrainingArguments):
     pass
+
+@dataclass
+class RerankArguments:
+    model_name_or_path: str = field(
+        default=None,
+        metadata={"help": "Path or HF repo id for Qwen3-VL reranker."}
+    )
+    instruction: str = field(
+        default="Given a search query, retrieve relevant candidates that answer the query.",
+        metadata={"help": "Instruction passed to reranker."}
+    )
+
+    # topk setting
+    topk: int = field(default=100, metadata={"help": "TopK from embedding retrieval to rerank."})

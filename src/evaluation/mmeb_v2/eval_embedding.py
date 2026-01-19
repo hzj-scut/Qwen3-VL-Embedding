@@ -48,6 +48,7 @@ def encode_embeddings(
     Generate embeddings using MMEBEmbeddingModel's encode_input method.
     Supports DDP distributed gathering.
     """
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
     rank = dist.get_rank() if dist.is_initialized() else 0
     world_size = dist.get_world_size() if dist.is_initialized() else 1
 
@@ -57,7 +58,12 @@ def encode_embeddings(
     model.eval()
     
     # Show tqdm progress bar only on main process
-    progress_bar = tqdm(loader, desc=f"{description} (rank {rank})", disable=rank > 0)
+    progress_bar = tqdm(
+        loader, 
+        desc=f"{description} (rank {rank})", 
+        disable=local_rank > 0,
+        ncols=120
+    )
 
     for batch_inputs, dataset_info in progress_bar:
         with torch.autocast(enabled=True, dtype=torch.bfloat16, device_type="cuda"):
@@ -79,12 +85,6 @@ def encode_embeddings(
 
     # DDP synchronization logic
     if dist.is_initialized():
-        # Prepare global container
-        embed_dim = local_embeds_tensor.shape[-1]
-        all_reps_tensor = torch.zeros(full_dataset_len, embed_dim, 
-                                     dtype=local_embeds_tensor.dtype, 
-                                     device=local_embeds_tensor.device)
-        
         # Gather tensors
         gathered_embeds = [torch.zeros_like(local_embeds_tensor) for _ in range(world_size)]
         dist.all_gather(gathered_embeds, local_embeds_tensor)
@@ -129,6 +129,7 @@ def main():
     # DDP-safe model loading
     # Step 1: Only rank 0 downloads the model
     if rank == 0:
+        print_master(f"[rank=0] Loading the model from: {model_args.model_name_or_path}...")
         model = MMEBEmbeddingModel.load(
             model_name_or_path=model_args.model_name_or_path,
             normalize=model_args.normalize,
@@ -136,7 +137,6 @@ def main():
             attn_implementation='flash_attention_2',
             torch_dtype=torch.bfloat16,
         )
-        print_master(f"[rank=0] Loading the model from: {model_args.model_name_or_path}...")
 
     # Step 2: All processes wait until rank 0 finishes downloading
     if torch.distributed.is_initialized():
@@ -221,8 +221,6 @@ def main():
                 description=f"Queries: {dataset_name}"
             )
             if rank == 0:
-                query_embeds = query_embeds[:len(full_eval_qry_dataset)]
-                gt_infos = gt_infos[:len(full_eval_qry_dataset)]
                 os.makedirs(os.path.dirname(query_embed_path), exist_ok=True)
 
                 # Save embeddings
@@ -259,9 +257,6 @@ def main():
                 description=f"Candidates: {dataset_name}"
             )
             if rank == 0:
-                cand_embeds = cand_embeds[:len(full_eval_cand_dataset)]
-                all_cand_ids = all_cand_ids[:len(full_eval_cand_dataset)]
-
                 os.makedirs(os.path.dirname(cand_embed_path), exist_ok=True)
 
                 # Map embeddings to dictionary: {cand_id: embedding_vector}
@@ -327,8 +322,11 @@ def main():
                     del cand_tensor
                     torch.cuda.empty_cache()
 
-                    for qid, (ranked_idx, gt_info) in tqdm(enumerate(zip(ranked_indices, gt_infos)), 
-                                                        total=len(gt_infos), desc=f"Global Ranking: {dataset_name}"):
+                    for qid, (ranked_idx, gt_info) in tqdm(
+                        enumerate(zip(ranked_indices, gt_infos)), 
+                        total=len(gt_infos), desc=f"Global Ranking: {dataset_name}",
+                        disable=local_rank > 0, ncols=120,
+                    ):
                         rel_docids = gt_info["label_name"] if isinstance(gt_info["label_name"], list) else [gt_info["label_name"]]
                         rel_scores = gt_info.get("rel_scores", None)
                         
@@ -339,8 +337,11 @@ def main():
                         })
                 else:
                     # Local ranking (in-batch or per-query set)
-                    for qid, (qry_vec, gt_info) in tqdm(enumerate(zip(qry_tensor, gt_infos)), 
-                                                        total=len(gt_infos), desc=f"Local Ranking: {dataset_name}"):
+                    for qid, (qry_vec, gt_info) in tqdm(
+                        enumerate(zip(qry_tensor, gt_infos)), 
+                        total=len(gt_infos), desc=f"Local Ranking: {dataset_name}",
+                        disable=local_rank > 0, ncols=120
+                    ):
                         cand_names = gt_info["cand_names"]
                         cand_embeds = np.stack([cand_embed_dict[name] for name in cand_names])
                         cand_tensor = torch.from_numpy(cand_embeds).to(device)
@@ -382,9 +383,9 @@ def main():
                 formatted = {k: f"{v:.4f}" for k, v in score_dict.items() if isinstance(v, (int, float))}
                 print_master(f"Final Score for {dataset_name}: {formatted}")
 
-        if dist.is_initialized():
-            dist.barrier()
-            dist.destroy_process_group()
+    if dist.is_initialized():
+        dist.barrier()
+        dist.destroy_process_group()
 
 if __name__ == "__main__":
     main()

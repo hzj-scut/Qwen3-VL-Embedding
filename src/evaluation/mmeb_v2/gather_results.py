@@ -92,16 +92,21 @@ TASK_CATEGORIES = {
 def load_score(eval_dir: Path, domain: str, task: str) -> Optional[Dict]:
     """Load score results for a single task"""
     score_file = eval_dir / domain / f"{task}_score.json"
+    rank_score_file = eval_dir / domain / f"{task}_rerank_score.json"
     
-    if not score_file.exists():
+    if not score_file.exists() and not rank_score_file.exists():
         print(f"Warning: File does not exist {score_file}")
         return None
     
     try:
-        with open(score_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        if score_file.exists():
+            with open(score_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        else:
+            with open(rank_score_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
     except Exception as e:
-        print(f"Error: Failed to read file {score_file}: {e}")
+        print(f"Error: Failed to read file {score_file}|{rank_score_file}: {e}")
         return None
 
 

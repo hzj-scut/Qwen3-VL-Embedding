@@ -132,7 +132,8 @@ def load_momentseeker_dataset(model_args, data_args, *args, **kwargs):
         batch_size=2048,
         num_proc=1,
         drop_last_batch=False,
-        load_from_cache_file=False
+        load_from_cache_file=False,
+        keep_in_memory=True,
     )
     dataset = dataset.select_columns(["query_input", "cand_input", "dataset_infos"])
     return dataset, None
